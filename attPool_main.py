@@ -17,7 +17,7 @@ transform = transforms.Compose(
 
 trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                         download=True, transform=transform)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=64,
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=128,
                                           shuffle=True, num_workers=2)
 
 testset = torchvision.datasets.CIFAR10(root='./data', train=False,
@@ -39,25 +39,60 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# class Net(nn.Module):
+#     def __init__(self):
+#         super(Net, self).__init__()
+#         self.conv1 = nn.Conv2d(3, 6, 5)
+#         self.pool = nn.MaxPool2d(2, 2)
+#         self.conv2 = nn.Conv2d(6, 16, 5)
+#         self.fc1 = nn.Linear(16 * 5 * 5, 120)
+#         self.fc2 = nn.Linear(120, 84)
+#         self.fc3 = nn.Linear(84, 10)
+#
+#     def forward(self, x):
+#         x = self.pool(F.relu(self.conv1(x)))
+#         x = self.pool(F.relu(self.conv2(x)))
+#         x = x.view(-1, 16 * 5 * 5)
+#         x = F.relu(self.fc1(x))
+#         x = F.relu(self.fc2(x))
+#         x = self.fc3(x)
+#         return x
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
+        self.pool1 = nn.AvgPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc0 = nn.Linear(6, 1)
+        self.fc01 = nn.Linear(16, 1)
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
+        x = self.conv1(x)
+        a = x.permute(0, 2, 3, 1).contiguous().view(-1, x.size()[1])
+        b = F.relu(self.fc0(a)).squeeze(1)
+        c = b.view(x.size()[0], x.size()[2], x.size()[3]).unsqueeze(1).repeat(1, x.size()[1], 1, 1)
+        d = torch.mul(x, c)
+        y = self.pool(F.relu(d))
+        # # baseline
+        # y = self.pool(F.relu(x))
+        y = self.conv2(y)
+        a1 = y.permute(0, 2, 3, 1).contiguous().view(-1, y.size()[1])
+        b1 = F.relu(self.fc01(a1)).squeeze(1)
+        c1 = b1.view(y.size()[0], y.size()[2], y.size()[3]).unsqueeze(1).repeat(1, y.size()[1], 1, 1)
+        d1 = torch.mul(y, c1)
+        z = self.pool(F.relu(d1))
+        # # baseline
+        # z = self.pool(F.relu(y))
+        z = z.view(-1, 16 * 5 * 5)
+        z = F.relu(self.fc1(z))
+        z = F.relu(self.fc2(z))
+        z = self.fc3(z)
+        return z
 
 net = Net()
 net.cuda()
@@ -80,7 +115,7 @@ optimizer = optim.Adam(net.parameters(), lr=0.001)
 # We simply have to loop over our data iterator, and feed the inputs to the
 # network and optimize
 
-for epoch in range(100):  # loop over the dataset multiple times
+for epoch in range(5):  # loop over the dataset multiple times
 
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
@@ -101,7 +136,7 @@ for epoch in range(100):  # loop over the dataset multiple times
 
         # print statistics
         running_loss += loss.data[0]
-        if i % 200 == 199:    # print every 2000 mini-batches
+        if (i+1) % 200 == 0:    # print every 2000 mini-batches
             print('[%d, %5d] loss: %.3f' %
                   (epoch + 1, i + 1, running_loss / 200))
             running_loss = 0.0
@@ -126,28 +161,28 @@ for data in testloader:
 print('Accuracy of the network on the 10000 test images: %d %%' % (
     100 * correct / total))
 
-########################################################################
-# That looks waaay better than chance, which is 10% accuracy (randomly picking
-# a class out of 10 classes).
-# Seems like the network learnt something.
+# ########################################################################
+# # That looks waaay better than chance, which is 10% accuracy (randomly picking
+# # a class out of 10 classes).
+# # Seems like the network learnt something.
+# #
+# # Hmmm, what are the classes that performed well, and the classes that did
+# # not perform well:
 #
-# Hmmm, what are the classes that performed well, and the classes that did
-# not perform well:
-
-class_correct = list(0. for i in range(10))
-class_total = list(0. for i in range(10))
-for data in testloader:
-    images, labels = data
-    images, labels = images.cuda(), labels.cuda()
-    outputs = net(Variable(images))
-    _, predicted = torch.max(outputs.data, 1)
-    c = (predicted == labels).squeeze()
-    for i in range(4):
-        label = labels[i]
-        class_correct[label] += c[i]
-        class_total[label] += 1
-
-
-for i in range(10):
-    print('Accuracy of %5s : %2d %%' % (
-        classes[i], 100 * class_correct[i] / class_total[i]))
+# class_correct = list(0. for i in range(10))
+# class_total = list(0. for i in range(10))
+# for data in testloader:
+#     images, labels = data
+#     images, labels = images.cuda(), labels.cuda()
+#     outputs = net(Variable(images))
+#     _, predicted = torch.max(outputs.data, 1)
+#     c = (predicted == labels).squeeze()
+#     for i in range(4):
+#         label = labels[i]
+#         class_correct[label] += c[i]
+#         class_total[label] += 1
+#
+#
+# for i in range(10):
+#     print('Accuracy of %5s : %2d %%' % (
+#         classes[i], 100 * class_correct[i] / class_total[i]))
