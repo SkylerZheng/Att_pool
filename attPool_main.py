@@ -38,7 +38,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+#
 # class Net(nn.Module):
 #     def __init__(self):
 #         super(Net, self).__init__()
@@ -58,6 +58,25 @@ import torch.nn.functional as F
 #         x = self.fc3(x)
 #         return x
 
+# define attention module
+class AttModule(nn.Module):
+    def __init__(self):
+        super(AttModule, self).__init__()
+        self.fc0 = nn.Linear(6, 1)
+    def forward(self, x):
+        a = x.permute(0, 2, 3, 1).contiguous().view(-1, x.size()[1])
+        b = F.relu(self.fc0(a)).squeeze(1)
+        c = b.view(x.size()[0], x.size()[2], x.size()[3]).unsqueeze(1).repeat(1, x.size()[1], 1, 1)
+        d = torch.mul(x, c)
+        return d
+
+# wrap the attention module as a function for easy call
+# def AttPool(input_):
+#     AttPool = AttModule()(input_)
+#     return AttPool.cuda()
+
+AttPool = AttModule()
+AttPool.cuda()
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -65,34 +84,64 @@ class Net(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.pool1 = nn.AvgPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc0 = nn.Linear(6, 1)
-        self.fc01 = nn.Linear(16, 1)
+        # self.fc0 = nn.Linear(6, 1)
+        # self.fc01 = nn.Linear(16, 1)
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
         x = self.conv1(x)
-        a = x.permute(0, 2, 3, 1).contiguous().view(-1, x.size()[1])
-        b = F.relu(self.fc0(a)).squeeze(1)
-        c = b.view(x.size()[0], x.size()[2], x.size()[3]).unsqueeze(1).repeat(1, x.size()[1], 1, 1)
-        d = torch.mul(x, c)
-        y = self.pool(F.relu(d))
+        # x = AttModule(x)
+        x = AttPool(x)
+        y = self.pool(x)
         # # baseline
         # y = self.pool(F.relu(x))
         y = self.conv2(y)
-        a1 = y.permute(0, 2, 3, 1).contiguous().view(-1, y.size()[1])
-        b1 = F.relu(self.fc01(a1)).squeeze(1)
-        c1 = b1.view(y.size()[0], y.size()[2], y.size()[3]).unsqueeze(1).repeat(1, y.size()[1], 1, 1)
-        d1 = torch.mul(y, c1)
-        z = self.pool(F.relu(d1))
+        # y = AttModule(y)
+        z = self.pool(F.relu(y))
         # # baseline
         # z = self.pool(F.relu(y))
-        z = z.view(-1, 16 * 5 * 5)
-        z = F.relu(self.fc1(z))
-        z = F.relu(self.fc2(z))
-        z = self.fc3(z)
-        return z
+        out = z.view(-1, 16 * 5 * 5)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = self.fc3(out)
+        return out
+# class Net(nn.Module):
+#     def __init__(self):
+#         super(Net, self).__init__()
+#         self.conv1 = nn.Conv2d(3, 6, 5)
+#         self.pool = nn.MaxPool2d(2, 2)
+#         self.pool1 = nn.AvgPool2d(2, 2)
+#         self.conv2 = nn.Conv2d(6, 16, 5)
+#         self.fc0 = nn.Linear(6, 1)
+#         self.fc01 = nn.Linear(16, 1)
+#         self.fc1 = nn.Linear(16 * 5 * 5, 120)
+#         self.fc2 = nn.Linear(120, 84)
+#         self.fc3 = nn.Linear(84, 10)
+#
+#     def forward(self, x):
+#         x = self.conv1(x)
+#         a = x.permute(0, 2, 3, 1).contiguous().view(-1, x.size()[1])
+#         b = F.relu(self.fc0(a)).squeeze(1)
+#         c = b.view(x.size()[0], x.size()[2], x.size()[3]).unsqueeze(1).repeat(1, x.size()[1], 1, 1)
+#         d = torch.mul(x, c)
+#         y = self.pool(F.relu(d))
+#         # # baseline
+#         # y = self.pool(F.relu(x))
+#         y = self.conv2(y)
+#         a1 = y.permute(0, 2, 3, 1).contiguous().view(-1, y.size()[1])
+#         b1 = F.relu(self.fc01(a1)).squeeze(1)
+#         c1 = b1.view(y.size()[0], y.size()[2], y.size()[3]).unsqueeze(1).repeat(1, y.size()[1], 1, 1)
+#         d1 = torch.mul(y, c1)
+#         z = self.pool(F.relu(d1))
+#         # # baseline
+#         # z = self.pool(F.relu(y))
+#         z = z.view(-1, 16 * 5 * 5)
+#         z = F.relu(self.fc1(z))
+#         z = F.relu(self.fc2(z))
+#         z = self.fc3(z)
+#         return z
 
 net = Net()
 net.cuda()
