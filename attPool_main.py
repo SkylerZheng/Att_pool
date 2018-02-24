@@ -38,113 +38,57 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
-#
-# class Net(nn.Module):
-#     def __init__(self):
-#         super(Net, self).__init__()
-#         self.conv1 = nn.Conv2d(3, 6, 5)
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.conv2 = nn.Conv2d(6, 16, 5)
-#         self.fc1 = nn.Linear(16 * 5 * 5, 120)
-#         self.fc2 = nn.Linear(120, 84)
-#         self.fc3 = nn.Linear(84, 10)
-#
-#     def forward(self, x):
-#         x = self.pool(F.relu(self.conv1(x)))
-#         x = self.pool(F.relu(self.conv2(x)))
-#         x = x.view(-1, 16 * 5 * 5)
-#         x = F.relu(self.fc1(x))
-#         x = F.relu(self.fc2(x))
-#         x = self.fc3(x)
-#         return x
-
-# define attention module
-class AttModule(nn.Module):
-    def __init__(self):
-        super(AttModule, self).__init__()
-        self.fc0 = nn.Linear(6, 1)
-    def forward(self, x):
-        a = x.permute(0, 2, 3, 1).contiguous().view(-1, x.size()[1])
-        b = F.relu(self.fc0(a)).squeeze(1)
-        c = b.view(x.size()[0], x.size()[2], x.size()[3]).unsqueeze(1).repeat(1, x.size()[1], 1, 1)
-        d = torch.mul(x, c)
-        return d
-
-# wrap the attention module as a function for easy call
-# def AttPool(input_):
-#     AttPool = AttModule()(input_)
-#     return AttPool.cuda()
-
-AttPool = AttModule()
-AttPool.cuda()
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
+def conv3x3(in_planes, out_planes, stride=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, padding=1, stride=stride, bias=False)
+class SimpleBlock(nn.Module):
+    def __init__(self, inplanes, planes1, planes2, stride=1):
+        super(SimpleBlock, self).__init__()
+        self.conv1 = conv3x3(inplanes, planes1, stride)
+        self.bn1 = nn.BatchNorm2d(planes1)
+        self.relu = nn.ReLU(inplace=True)
         self.pool = nn.MaxPool2d(2, 2)
-        self.pool1 = nn.AvgPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        # self.fc0 = nn.Linear(6, 1)
-        # self.fc01 = nn.Linear(16, 1)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+        self.drop = nn.Dropout(0.5)
+        self.conv2 = conv3x3(planes1, planes2)
+        self.conv3 = conv3x3(planes2, planes2)
+        self.bn2 = nn.BatchNorm2d(planes2)
+        self.fc1 = nn.Linear(128 * 4 * 4, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 10)
+
+    def _make_layer(self, block, channels):
+        layers = []
+        layers.append(block(channels))
+        return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.conv1(x)
-        # x = AttModule(x)
-        x = AttPool(x)
-        y = self.pool(x)
-        # # baseline
-        # y = self.pool(F.relu(x))
-        y = self.conv2(y)
-        # y = AttModule(y)
-        z = self.pool(F.relu(y))
-        # # baseline
-        # z = self.pool(F.relu(y))
-        out = z.view(-1, 16 * 5 * 5)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.drop(out)
+        # out = self.pool(self.relu(out))
+        out = self.pool(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+        out = self.drop(out)
+        out = self.pool(out)
+
+        out = self.conv3(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+        out = self.drop(out)
+        out = self.pool(out)
+
+        out = out.view(-1, out.size()[1] * out.size()[2] * out.size()[3])
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         out = self.fc3(out)
         return out
-# class Net(nn.Module):
-#     def __init__(self):
-#         super(Net, self).__init__()
-#         self.conv1 = nn.Conv2d(3, 6, 5)
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.pool1 = nn.AvgPool2d(2, 2)
-#         self.conv2 = nn.Conv2d(6, 16, 5)
-#         self.fc0 = nn.Linear(6, 1)
-#         self.fc01 = nn.Linear(16, 1)
-#         self.fc1 = nn.Linear(16 * 5 * 5, 120)
-#         self.fc2 = nn.Linear(120, 84)
-#         self.fc3 = nn.Linear(84, 10)
-#
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         a = x.permute(0, 2, 3, 1).contiguous().view(-1, x.size()[1])
-#         b = F.relu(self.fc0(a)).squeeze(1)
-#         c = b.view(x.size()[0], x.size()[2], x.size()[3]).unsqueeze(1).repeat(1, x.size()[1], 1, 1)
-#         d = torch.mul(x, c)
-#         y = self.pool(F.relu(d))
-#         # # baseline
-#         # y = self.pool(F.relu(x))
-#         y = self.conv2(y)
-#         a1 = y.permute(0, 2, 3, 1).contiguous().view(-1, y.size()[1])
-#         b1 = F.relu(self.fc01(a1)).squeeze(1)
-#         c1 = b1.view(y.size()[0], y.size()[2], y.size()[3]).unsqueeze(1).repeat(1, y.size()[1], 1, 1)
-#         d1 = torch.mul(y, c1)
-#         z = self.pool(F.relu(d1))
-#         # # baseline
-#         # z = self.pool(F.relu(y))
-#         z = z.view(-1, 16 * 5 * 5)
-#         z = F.relu(self.fc1(z))
-#         z = F.relu(self.fc2(z))
-#         z = self.fc3(z)
-#         return z
-
-net = Net()
+net = SimpleBlock(3, 64, 128)
 net.cuda()
+
 ########################################################################
 # 3. Define a Loss function and optimizer
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -164,7 +108,7 @@ optimizer = optim.Adam(net.parameters(), lr=0.001)
 # We simply have to loop over our data iterator, and feed the inputs to the
 # network and optimize
 
-for epoch in range(5):  # loop over the dataset multiple times
+for epoch in range(10):  # loop over the dataset multiple times
 
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
